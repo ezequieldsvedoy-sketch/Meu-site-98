@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FS20 Mod Studio</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0b100c; --panel: #151d16; --line: #334533; --green: #8dd34f; --text: #f3f7ef; --muted: #b4c0b0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px system-ui, Arial, sans-serif; }
+    header { padding: 14px 16px; border-bottom: 1px solid var(--line); background: #121a13; display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+    .brand { display: flex; gap: 10px; align-items: center; }
+    .logo { width: 42px; height: 42px; border: 2px solid #e5aa23; border-radius: 12px; display: grid; place-items: center; color: #e5aa23; font-weight: 900; }
+    .brand h1 { font-size: 18px; margin: 0; }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    button, .file-button { border: 1px solid #547342; border-radius: 9px; padding: 10px 12px; background: var(--green); color: #14200e; font-weight: 750; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 13px; }
+    button.secondary { background: #263427; color: var(--text); border-color: #435943; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input[type=file] { display: none; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; min-height: calc(100vh - 72px); }
+    .viewport { position: relative; min-height: 520px; background: #080c09; overflow: hidden; }
+    #stage { position: absolute; inset: 0; }
+    #stage canvas { width: 100%; height: 100%; display: block; }
+    .overlay { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
+    .chip { background: #101810dc; border: 1px solid #364736; border-radius: 8px; padding: 7px 10px; font-size: 12px; color: #d7e7d1; }
+    .empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 28px; text-align: center; pointer-events: none; }
+    .empty-card { max-width: 390px; background: #111a12e8; border: 1px dashed #526a4d; border-radius: 16px; padding: 24px; pointer-events: auto; }
+    .empty-card .big { font-size: 42px; }
+    .empty-card h2 { margin: 8px 0; }
+    .empty-card p { color: var(--muted); line-height: 1.5; }
+    aside { background: var(--panel); border-left: 1px solid var(--line); padding: 14px; overflow: auto; max-height: calc(100vh - 72px); }
+    section { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: #121912; }
+    h2 { font-size: 14px; margin: 0 0 11px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .row > * { flex: 1; }
+    .full { width: 100%; }
+    .control { display: flex; align-items: center; gap: 8px; margin: 9px 0; color: #dfe8da; }
+    .control input { accent-color: var(--green); }
+    .hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
+    #tree { max-height: 250px; overflow: auto; font-size: 12px; }
+    #tree ul { padding-left: 17px; margin: 5px 0; }
+    #tree li { margin: 4px 0; overflow-wrap: anywhere; }
+    #tree button { padding: 3px 6px; font-size: 11px; background: #253425; color: #dce8d8; border-color: #405540; }
+    #status { font-size: 12px; line-height: 1.5; color: #d7e8d0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .stat { font-size: 11px; color: var(--muted); margin-top: 8px; }
+    footer { padding: 12px 16px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); }
+    @media(max-width:760px) {
+      .layout { grid-template-columns: 1fr; }
+      .viewport { min-height: 55vh; height: 55vh; }
+      aside { max-height: none; border-left: 0; border-top: 1px solid var(--line); }
+      .brand h1 { font-size: 16px; }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">FS20</div>
+      <div>
+        <h1>FS20 Mod Studio</h1>
+        <p>Visualizador 3D • Mods de tratores • OBJ/GLB/GLTF</p>
+      </div>
+    </div>
+    <label class="file-button" for="zipInput">＋ Abrir mod ZIP</label>
+    <input id="zipInput" type="file" accept=".zip,application/zip">
+    <label class="file-button" for="modelFiles">Abrir modelo</label>
+    <input id="modelFiles" type="file" multiple accept=".glb,.gltf,.obj,.objx,.mtl,.png,.jpg,.jpeg,.webp,.bin">
+  </header>
+
+  <div class="layout">
+    <main class="viewport">
+      <div id="stage"></div>
+      <div class="overlay">
+        <span class="chip" id="modelName">Nenhum modelo carregado</span>
+        <span class="chip">Arraste para girar · Zoom com scroll/pinça</span>
+      </div>
+      <div class="empty" id="empty">
+        <div class="empty-card">
+          <div class="big">🚜</div>
+          <h2>Abra um modelo 3D</h2>
+          <p>Selecione GLB, GLTF ou OBJ. Para GLTF com arquivos externos, selecione também as texturas e arquivos auxiliares.</p>
+          <label class="file-button" for="modelFiles">Selecionar arquivos 3D</label>
+        </div>
+      </div>
+    </main>
+
+    <aside>
+      <section>
+        <h2>Visualização</h2>
+        <label class="control"><input type="checkbox" id="wire"> Mostrar malha (wireframe)</label>
+        <label class="control"><input type="checkbox" id="grid" checked> Mostrar grade no chão</label>
+        <label class="control"><input type="checkbox" id="axes"> Mostrar eixos XYZ</label>
+        <div class="row">
+          <button class="secondary" id="frame">Enquadrar modelo</button>
+          <button class="secondary" id="reset">Reiniciar câmera</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Peças / hierarquia</h2>
+        <p class="hint">Toque numa peça para destacá-la na cena.</p>
+        <div id="tree" class="hint">A hierarquia aparecerá após carregar um modelo.</div>
+        <div id="selection" class="stat">Nenhuma peça selecionada.</div>
+      </section>
+
+      <section>
+        <h2>Informações do modelo</h2>
+        <div id="info" class="hint">Sem modelo carregado.</div>
+      </section>
+
+      <section>
+        <h2>Exportação básica</h2>
+        <p class="hint">Exporta uma cópia em GLB. Isso não converte XML, scripts ou o mod inteiro para FS20.</p>
+        <button class="full" id="export" disabled>Exportar GLB</button>
+        <div style="height:8px"></div>
+        <button class="secondary full" id="saveReport" disabled>Baixar relatório TXT</button>
+      </section>
+
+      <section>
+        <h2>Conversor FS22 → FS20</h2>
+        <p class="hint">Analisa os arquivos do mod e exporta uma cópia ZIP. A conversão automática altera somente o que foi explicitamente selecionado; I3D.SHAPES binário e recursos internos do jogo exigem tratamento específico.</p>
+        <label class="control"><input type="checkbox" id="patchDescVersion"> Ajustar descVersion do modDesc.xml para 40 (referência do projeto; não garante compatibilidade)</label>
+        <button class="full" id="analyzeConvert" disabled>🔎 Analisar e preparar ZIP</button>
+        <button class="secondary full" id="downloadConvertReport" disabled>Baixar relatório da conversão</button>
+        <div id="conversionStatus" class="hint" style="margin-top:8px">Abra um ZIP primeiro.</div>
+      </section>
+
+      <section>
+        <h2>Estado</h2>
+        <div id="status">Pronto. Abra um modelo compatível.</div>
+      </section>
+    </aside>
+  </div>
+
+  <footer>FS20 Mod Studio • ZIP + análise I3D/XML + visualizador GLB/GLTF/OBJ. SHAPES binário requer decodificador específico da versão.</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+    const $ = id => document.getElementById(id);
+    let scene, camera, renderer, controls, grid, axes;
+    let model = null, selected = null;
+    const originalMats = new Map();
+    let loadedFiles = [];
+    let zipFileMap = new Map();
+    let zipObjectURLs = new Map();
+    let i3dWarnings = [];
+    let importedI3DPath = '';
+    let importedI3DText = '';
+    let conversionReportText = '';
+    let lastConversionSummary = null;
+    let stats = { meshes: 0, vertices: 0, materials: 0 };
+    const stage = $('stage');
+
+    window.addEventListener('error', event => {
+      const msg = event?.message || 'Erro JavaScript desconhecido';
+      const target = $('status');
+      if (target) target.textContent = 'Erro no site: ' + msg + '\nRecarregue a página; confirme internet para as bibliotecas Three.js/JSZip.';
+    });
+    window.addEventListener('unhandledrejection', event => {
+      const msg = event?.reason?.message || String(event?.reason || 'Erro assíncrono');
+      const target = $('status');
+      if (target) target.textContent = 'Falha ao abrir/carregar: ' + msg;
+    });
+
+    init();
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x080d09);
+
+      camera = new THREE.PerspectiveCamera(45, 1, 0.01, 5000);
+      camera.position.set(5, 4, 7);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      stage.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.target.set(0, 1, 0);
+
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x4a6046, 2.1));
+      const key = new THREE.DirectionalLight(0xffffff, 2.4);
+      key.position.set(6, 10, 7);
+      scene.add(key);
+
+      const fill = new THREE.DirectionalLight(0x9ac8ff, 0.7);
+      fill.position.set(-6, 4, -5);
+      scene.add(fill);
+
+      grid = new THREE.GridHelper(100, 100, 0x54704b, 0x253628);
+      scene.add(grid);
+
+      axes = new THREE.AxesHelper(2);
+      axes.visible = false;
+      scene.add(axes);
+
+      resize();
+      window.addEventListener('resize', resize);
+      renderer.setAnimationLoop(() => {
+        controls.update();
+        renderer.render(scene, camera);
+      });
+
+      // Configuração dos eventos de interface corrigidos
+      setupEvents();
+    }
+
+    function setupEvents() {
+      $('zipInput').addEventListener('change', async e => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (file) await loadModZip(file);
+      });
+      $('modelFiles').addEventListener('change', e => {
+        if (e.target.files.length) loadFiles([...e.target.files]);
+        e.target.value = '';
+      });
+
+      $('wire').addEventListener('change', e => {
+        if (model) {
+          model.traverse(o => {
+            if (o.isMesh) {
+              for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+                if (m) m.wireframe = e.target.checked;
+              }
+            }
+          });
+        }
+      });
+
+      $('grid').addEventListener('change', e => grid.visible = e.target.checked);$('axes').addEventListener('change', e => axes.visible = e.target.checked);
+      $('frame').addEventListener('click', frameModel);$('reset').addEventListener('click', () => {
+        camera.position.set(5, 4, 7);
+        controls.target.set(0, 1, 0);
+        controls.update();
+      });
+
+      $('export').addEventListener('click', exportGLB);$('saveReport').addEventListener('click', generateReport);
+      $('analyzeConvert').addEventListener('click', analyzeAndExportFS20);
+      $('downloadConvertReport').addEventListener('click', downloadConversionReport);
+    }
+
+    function resize() {
+      if (!renderer) return;
+      let w = stage.clientWidth || 300, h = stage.clientHeight || 300;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    function status(s) {
+      $('status').textContent = s;
+    }
+
+    function disposeModel() {
+      if (model) {
+        scene.remove(model);
+        model.traverse(o => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) {
+            for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+              if (m.map) m.map.dispose();
+              m.dispose();
+            }
+          }
+        });
+      }
+      model = null;
+      selected = null;
+      originalMats.clear();
+    }
+
+    function setModel(obj, name) {
+      disposeModel();
+      model = obj;
+      model.name = name;
+      scene.add(model);
+
+      $('modelName').textContent = name;
+      $('empty').style.display = 'none';
+
+      stats = { meshes: 0, vertices: 0, materials: 0 };
+      const ms = new Set();
+
+      model.traverse(o => {
+        if (o.isMesh) {
+          stats.meshes++;
+          if (o.geometry?.attributes?.position) {
+            stats.vertices += o.geometry.attributes.position.count;
+          }
+          for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+            if (m) ms.add(m);
+          }
+          originalMats.set(o, o.material);
+        }
+      });
+
+      stats.materials = ms.size;
+      updateInfo();
+      buildTree();
+      frameModel();
+
+      $('export').disabled = false;
+      $('saveReport').disabled = false;
+      status('Modelo carregado com sucesso!');
+    }
+
+    function frameModel() {
+      if (!model) return;
+      const box = new THREE.Box3().setFromObject(model);
+      if (box.isEmpty()) return;
+
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const max = Math.max(size.x, size.y, size.z, 1);
+
+      controls.target.copy(center);
+      camera.near = Math.max(max / 10000, 0.001);
+      camera.far = max * 1000;
+      camera.updateProjectionMatrix();
+      camera.position.copy(center).add(new THREE.Vector3(max * 1.5, max, max * 1.8));
+      controls.update();
+    }
+
+    function updateInfo() {
+      $('info').innerHTML = `<b>Malhas:</b> ${stats.meshes}<br><b>Vértices:</b> ${stats.vertices.toLocaleString('pt-BR')}<br><b>Materiais:</b> ${stats.materials}<br><b>Arquivo:</b> ${model?.name || '—'}`;
+    }
+
+    function buildTree() {
+      const root = $('tree');
+      root.innerHTML = '';
+      if (!model) {
+        root.textContent = 'Sem hierarquia.';
+        return;
+      }
+
+      const ul = document.createElement('ul');
+      function add(parent, node, depth) {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.textContent = (node.isMesh ? '◈ ' : '▸ ') + (node.name || node.type || 'Objeto sem nome');
+        b.addEventListener('click', () => selectNode(node));
+        li.appendChild(b);
+        parent.appendChild(li);
+
+        if (node.children?.length && depth < 30) {
+          const sub = document.createElement('ul');
+          node.children.forEach(ch => add(sub, ch, depth + 1));
+          li.appendChild(sub);
+        }
+      }
+      add(ul, model, 0);
+      root.appendChild(ul);
+    }
+
+    function selectNode(node) {
+      if (selected?.isMesh && originalMats.has(selected)) {
+        selected.material = originalMats.get(selected);
+      }
+      selected = node;
+      if (node.isMesh) {
+        const orig = originalMats.get(node);
+        if (Array.isArray(orig)) {
+          node.material = orig.map(m => {
+            let c = m.clone();
+            c.emissive = new THREE.Color(0x315d10);
+            c.emissiveIntensity = 0.7;
+            return c;
+          });
+        } else if (orig) {
+          node.material = orig.clone();
+          node.material.emissive = new THREE.Color(0x315d10);
+          node.material.emissiveIntensity = 0.7;
+        }
+      }
+      $('selection').textContent = 'Selecionado: ' + (node.name || node.type || 'objeto');
+    }
+
+    function loadFiles(files) {
+      loadedFiles = [...files];
+      const map = new Map(loadedFiles.map(f => [f.name, f]));
+      const primary = loadedFiles.find(f => /\.glb$/i.test(f.name)) ||
+                      loadedFiles.find(f => /\.gltf$/i.test(f.name)) ||
+                      loadedFiles.find(f => /\.obj$/i.test(f.name));
+
+      if (!primary) {
+        status('Erro: Não encontrei arquivos no formato GLB, GLTF ou OBJ.');
+        return;
+      }
+
+      const url = f => URL.createObjectURL(f);
+
+      if (/\.obj$/i.test(primary.name)) {
+        const loader = new OBJLoader();
+        const mtl = loadedFiles.find(f => /\.mtl$/i.test(f.name));
+
+        if (mtl) {
+          const ml = new MTLLoader();
+          ml.load(url(mtl), materials => {
+            materials.preload();
+            loader.setMaterials(materials);
+            loader.load(url(primary), o => setModel(o, primary.name), undefined, e => status('Erro ao carregar OBJ: ' + e.message));
+          }, undefined, () => loader.load(url(primary), o => setModel(o, primary.name)));
+        } else {
+          loader.load(url(primary), o => setModel(o, primary.name), undefined, e => status('Erro ao carregar OBJ: ' + e.message));
+        }
+      } else {
+        const loader = new GLTFLoader();
+        if (/\.glb$/i.test(primary.name)) {
+          loader.load(url(primary), g => setModel(g.scene, primary.name), undefined, e => status('Erro GLB: ' + e.message));
+        } else {
+          const manager = new THREE.LoadingManager();
+          manager.setURLModifier(u => {
+            const name = decodeURIComponent(u.split('/').pop().split('?')[0]);
+            const f = map.get(name);
+            return f ? url(f) : u;
+          });
+          new GLTFLoader(manager).load(url(primary), g => setModel(g.scene, primary.name), undefined, e => status('Erro GLTF: ' + e.message));
+        }
+      }
+    }
+
+
+
+    // --- ZIP + I3D integration ---
+    function cleanZipPath(path) {
+      const stack = [];
+      for (const part of String(path).replace(/\\/g, '/').split('/')) {
+        if (!part || part === '.') continue;
+        if (part === '..') stack.pop(); else stack.push(part);
+      }
+      return stack.join('/');
+    }
+
+    function releaseZipURLs() {
+      for (const url of zipObjectURLs.values()) URL.revokeObjectURL(url);
+      zipObjectURLs.clear();
+    }
+
+    function getZipURL(path) {
+      path = cleanZipPath(path);
+      if (zipObjectURLs.has(path)) return zipObjectURLs.get(path);
+      const bytes = zipFileMap.get(path);
+      if (!bytes) return null;
+      const ext = path.split('.').pop().toLowerCase();
+      const mime = ({ png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', bmp:'image/bmp', glb:'model/gltf-binary', gltf:'model/gltf+json', obj:'text/plain', mtl:'text/plain', xml:'application/xml', i3d:'application/xml' })[ext] || 'application/octet-stream';
+      const url = URL.createObjectURL(new Blob([bytes], {type:mime}));
+      zipObjectURLs.set(path, url);
+      return url;
+    }
+
+    async function loadModZip(file) {
+      window.lastOpenedZipName = file.name;
+      if (!/\.zip$/i.test(file.name)) { status('Seleciona um arquivo .zip.'); return; }
+      if (!window.JSZip) { status('Não foi possível carregar JSZip. Verifica a conexão com a internet.'); return; }
+      status('A descompactar o mod na memória: ' + file.name);
+      try {
+        releaseZipURLs();
+        zipFileMap.clear();
+        const zip = await window.JSZip.loadAsync(file);
+        const entries = Object.values(zip.files).filter(x => !x.dir);
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          zipFileMap.set(cleanZipPath(entry.name), await entry.async('uint8array'));
+          if (i % 25 === 0) status(`A ler ZIP... ${i + 1}/${entries.length} arquivos`);
+        }
+        const paths = [...zipFileMap.keys()];
+        $('analyzeConvert').disabled = false;
+        $('downloadConvertReport').disabled = true;
+        $('conversionStatus').textContent = `ZIP carregado: ${paths.length} arquivos. Pronto para analisar/exportar.`;
+        const i3ds = paths.filter(p => /\.i3d$/i.test(p));
+        const primaryModel = paths.find(p => /\.glb$/i.test(p)) || paths.find(p => /\.gltf$/i.test(p)) || paths.find(p => /\.obj$/i.test(p));
+        const textures = paths.filter(p => /\.(png|jpe?g|webp|dds|tga|bmp)$/i.test(p));
+        const shaders = paths.filter(p => /vehicleshader\.xml$/i.test(p));
+        // Prioriza formatos que o navegador consegue renderizar de verdade.
+        // Muitos mods contêm I3D + SHAPES, mas SHAPES ainda não tem decodificador aqui.
+        if (i3ds.length && !primaryModel) {
+          const zipBase = file.name.replace(/\.zip$/i, '').toLowerCase();
+          const i3dPath = i3ds.find(p => p.split('/').pop().replace(/\.i3d$/i, '').toLowerCase() === zipBase) || i3ds[0];
+          await loadI3DFromZip(i3dPath);
+          status(`ZIP analisado: ${file.name}\nArquivos: ${paths.length}\nI3D: ${i3ds.length}\nTexturas: ${textures.length}\nvehicleShader.xml: ${shaders.length}\n${i3dWarnings.length ? 'Avisos: ' + i3dWarnings.length : ''}`);
+        } else if (primaryModel) {
+          // Load supported formats from ZIP, including relative resources for GLTF/OBJ.
+          const url = path => getZipURL(path);
+          if (/\.obj$/i.test(primaryModel)) {
+            const objLoader = new OBJLoader();
+            const mtlPath = paths.find(p => p.toLowerCase() === primaryModel.replace(/[^/]+$/, '') + primaryModel.split('/').pop().replace(/\.obj$/i, '') + '.mtl'.toLowerCase()) || paths.find(p => /\.mtl$/i.test(p));
+            if (mtlPath) {
+              try {
+                const mtlText = new TextDecoder().decode(zipFileMap.get(mtlPath));
+                const materials = new MTLLoader().parse(mtlText, './');
+                materials.preload(); objLoader.setMaterials(materials);
+              } catch (e) { i3dWarnings.push('Não foi possível ler o MTL: ' + e.message); }
+            }
+            objLoader.load(url(primaryModel), obj => setModel(obj, primaryModel), undefined, err => status('Erro ao carregar OBJ: ' + (err?.message || err)));
+          } else {
+            const manager = new THREE.LoadingManager();
+            manager.setURLModifier(requested => {
+              let decoded = decodeURIComponent(requested.split('?')[0]);
+              const direct = cleanZipPath(decoded.replace(/^\.\//, ''));
+              if (zipFileMap.has(direct)) return url(direct);
+              const basename = direct.split('/').pop();
+              const found = paths.find(p => p.split('/').pop() === basename);
+              return found ? url(found) : requested;
+            });
+            new GLTFLoader(manager).load(url(primaryModel), gltf => setModel(gltf.scene, primaryModel), undefined, err => status('Erro ao carregar modelo: ' + (err?.message || err)));
+          }
+        } else {
+          status('ZIP aberto, mas não encontrei I3D nem GLB/GLTF/OBJ.\nArquivos: ' + paths.length);
+        }
+      } catch (err) {
+        console.error(err);
+        status('Erro ao abrir ZIP: ' + (err?.message || err));
+      }
+    }
+
+    function parseI3DVector(value, fallback) {
+      if (!value) return fallback;
+      const arr = value.trim().split(/\s+/).map(Number);
+      return arr.length === 3 && arr.every(Number.isFinite) ? arr : fallback;
+    }
+
+    async function loadI3DFromZip(i3dPath) {
+      i3dWarnings = [];
+      importedI3DPath = i3dPath;
+      const bytes = zipFileMap.get(i3dPath);
+      if (!bytes) throw new Error('I3D não encontrado: ' + i3dPath);
+      importedI3DText = new TextDecoder().decode(bytes);
+      const doc = new DOMParser().parseFromString(importedI3DText, 'application/xml');
+      if (doc.querySelector('parsererror')) throw new Error('O I3D contém XML inválido.');
+      if (doc.documentElement?.tagName !== 'i3D') throw new Error('O XML não tem raiz <i3D>.');
+      const base = i3dPath.includes('/') ? i3dPath.slice(0, i3dPath.lastIndexOf('/')) : '';
+      const fileById = new Map();
+      const shapeById = new Map();
+      const materialById = new Map();
+      doc.querySelectorAll('Files > File').forEach(el => {
+        const id = el.getAttribute('fileId'), filename = el.getAttribute('filename');
+        if (id && filename) fileById.set(id, filename);
+      });
+      doc.querySelectorAll('Shapes > Shape').forEach(el => {
+        const id = el.getAttribute('shapeId'); if (id) shapeById.set(id, el);
+      });
+      doc.querySelectorAll('Materials > Material').forEach(el => {
+        const id = el.getAttribute('materialId'); if (id) materialById.set(id, el);
+      });
+      const root = new THREE.Group();
+      root.name = i3dPath;
+      let shapeCount = 0;
+      const setTransform = (obj, el) => {
+        const t = parseI3DVector(el.getAttribute('translation'), [0,0,0]);
+        const r = parseI3DVector(el.getAttribute('rotation'), [0,0,0]);
+        const sc = parseI3DVector(el.getAttribute('scale'), [1,1,1]);
+        obj.position.set(...t);
+        obj.rotation.order = 'XYZ';
+        obj.rotation.set(r[0]*Math.PI/180, r[1]*Math.PI/180, r[2]*Math.PI/180);
+        obj.scale.set(...sc);
+        if (el.getAttribute('visibility') === 'false' || el.getAttribute('visibility') === '0') obj.visible = false;
+        const id = el.getAttribute('nodeId'); if (id) obj.userData.i3dNodeId = id;
+      };
+      const makeMaterial = async (shapeElement) => {
+        const ids = (shapeElement.getAttribute('materialIds') || '').trim().split(/\s+/).filter(Boolean);
+        const mats = [];
+        for (const id of ids) {
+          const def = materialById.get(id);
+          const mat = new THREE.MeshStandardMaterial({color:0xb9bdb6, roughness:0.82});
+          if (!def) { i3dWarnings.push('Material ID não encontrado: ' + id); mats.push(mat); continue; }
+          const texEl = def.querySelector('Texture');
+          if (texEl) {
+            const fileId = texEl.getAttribute('fileId');
+            const filename = texEl.getAttribute('filename') || fileById.get(fileId);
+            if (filename) {
+              const texturePath = cleanZipPath((base ? base + '/' : '') + filename);
+              if (/\.dds$/i.test(texturePath)) {
+                i3dWarnings.push('Textura DDS encontrada; precisa de DDSLoader: ' + texturePath);
+              } else {
+                const texUrl = getZipURL(texturePath);
+                if (texUrl) {
+                  try { mat.map = await new THREE.TextureLoader().loadAsync(texUrl); mat.map.colorSpace = THREE.SRGBColorSpace; }
+                  catch { i3dWarnings.push('Falha ao carregar textura: ' + texturePath); }
+                } else i3dWarnings.push('Textura não encontrada: ' + texturePath);
+              }
+            }
+          }
+          mats.push(mat);
+        }
+        return mats.length > 1 ? mats : (mats[0] || new THREE.MeshStandardMaterial({color:0x999999}));
+      };
+      const walk = async (el, parent) => {
+        const obj = new THREE.Group();
+        obj.name = el.getAttribute('name') || el.tagName || 'Nó I3D';
+        setTransform(obj, el);
+        parent.add(obj);
+        if (el.tagName === 'Shape') {
+          shapeCount++;
+          const sid = el.getAttribute('shapeId');
+          const def = shapeById.get(sid);
+          const shapeFile = def?.getAttribute('filename');
+          if (shapeFile) {
+            const resolved = cleanZipPath((base ? base + '/' : '') + shapeFile);
+            if (!zipFileMap.has(resolved)) i3dWarnings.push('Arquivo SHAPES não encontrado: ' + resolved);
+            else i3dWarnings.push('Dados binários SHAPES localizados, mas o decodificador desta versão ainda não está ligado: ' + resolved);
+          } else i3dWarnings.push('Shape sem filename para shapeId=' + sid);
+          // Placeholder visível para mostrar a posição do Shape na hierarquia.
+          const placeholder = new THREE.Mesh(new THREE.BoxGeometry(0.15,0.15,0.15), new THREE.MeshStandardMaterial({color:0xe3a72f, wireframe:true}));
+          placeholder.name = 'Geometria não decodificada (' + sid + ')';
+          obj.add(placeholder);
+          obj.userData.i3dShapeId = sid;
+          obj.userData.i3dMaterialIds = el.getAttribute('materialIds') || '';
+          // Mantém referência para diagnóstico; não finge que a caixa é a malha original.
+        }
+        for (const child of Array.from(el.children)) {
+          if (child.tagName === 'TransformGroup' || child.tagName === 'Shape') await walk(child, obj);
+        }
+      };
+      const sceneEl = doc.querySelector('i3D > Scene');
+      if (!sceneEl) throw new Error('A seção <Scene> não foi encontrada no I3D.');
+      for (const child of Array.from(sceneEl.children)) {
+        if (child.tagName === 'TransformGroup' || child.tagName === 'Shape') await walk(child, root);
+      }
+      setModel(root, i3dPath + ' (estrutura I3D; malha não decodificada)');
+      $('info').innerHTML += `<br><b>Shapes I3D:</b> ${shapeCount}<br><b>Geometria original:</b> não carregada<br><b>Motivo:</b> decodificador de .i3d.shapes ausente`;
+      status('O ZIP foi aberto e a hierarquia I3D foi analisada. A malha binária .i3d.shapes ainda precisa passar por um decodificador compatível antes de aparecer aqui. Não vou substituir a geometria por caixas falsas.\n' + i3dWarnings.slice(0, 8).join('\n') + (i3dWarnings.length > 8 ? `\n... e mais ${i3dWarnings.length - 8} avisos.` : ''));
+    }
+
+    // --- Primeira etapa real do conversor FS22 -> FS20 ---
+    // Faz análise estrutural e exporta uma cópia ZIP; não finge converter formatos binários proprietários.
+    async function analyzeAndExportFS20() {
+      if (!zipFileMap.size) {
+        $('conversionStatus').textContent = 'Abra um mod ZIP antes de iniciar.';
+        return;
+      }
+      if (!window.JSZip) {
+        $('conversionStatus').textContent = 'JSZip não carregou. Verifique a conexão e recarregue o site.';
+        return;
+      }
+      const btn = $('analyzeConvert');
+      btn.disabled = true;
+      $('downloadConvertReport').disabled = true;
+      $('conversionStatus').textContent = 'Analisando XML, I3D e referências internas...';
+      try {
+        const paths = [...zipFileMap.keys()];
+        const lower = new Map(paths.map(p => [p.toLowerCase(), p]));
+        const report = [];
+        const counts = {files: paths.length, xml: 0, xmlValid: 0, xmlInvalid: 0, i3d: 0, shapes: 0, textures: 0, scripts: 0};
+        const issues = [];
+        const modDescPaths = paths.filter(p => /(^|\/)moddesc\.xml$/i.test(p));
+        const i3dPaths = paths.filter(p => /\.i3d$/i.test(p));
+        counts.i3d = i3dPaths.length;
+        counts.shapes = paths.filter(p => /\.i3d\.shapes$/i.test(p)).length;
+        counts.textures = paths.filter(p => /\.(dds|png|jpe?g|tga|bmp|webp)$/i.test(p)).length;
+        counts.scripts = paths.filter(p => /\.(lua|js)$/i.test(p)).length;
+        report.push('FS20 MOD STUDIO — RELATÓRIO FS22 → FS20');
+        report.push('Arquivo: ' + (window.lastOpenedZipName || 'ZIP selecionado'));
+        report.push('Arquivos no pacote: ' + counts.files);
+        report.push('I3D: ' + counts.i3d + ' | I3D.SHAPES: ' + counts.shapes + ' | Texturas: ' + counts.textures + ' | Scripts: ' + counts.scripts);
+        report.push('');
+        report.push('ANÁLISE XML');
+        for (const path of paths.filter(p => /\.xml$/i.test(p) || /\.i3d$/i.test(p))) {
+          counts.xml++;
+          try {
+            const raw = new TextDecoder().decode(zipFileMap.get(path));
+            const doc = new DOMParser().parseFromString(raw, 'application/xml');
+            if (doc.querySelector('parsererror')) {
+              counts.xmlInvalid++;
+              issues.push('XML inválido: ' + path);
+              continue;
+            }
+            counts.xmlValid++;
+            const refs = [...raw.matchAll(/(?:filename|file|src|fileName)\s*=\s*["']([^"']+)["']/gi)].map(m => m[1]);
+            for (const ref of refs) {
+              const clean = ref.replace(/\\/g, '/').replace(/^\.\//, '');
+              if (!clean || clean.startsWith('$data/') || clean.startsWith('$moddir$') || clean.startsWith('http')) continue;
+              const candidates = [clean, path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) + clean : clean];
+              if (!candidates.some(c => lower.has(c.toLowerCase()))) {
+                // Report as a check, because some paths are relative to the game or resolved by the engine.
+                issues.push('Referência local não encontrada (verificar): ' + path + ' → ' + ref);
+              }
+            }
+            if (/\.i3d$/i.test(path)) {
+              const version = doc.documentElement?.getAttribute('version');
+              if (version) report.push('I3D versão ' + version + ': ' + path);
+              const dataRefs = [...new Set(raw.match(/\$data\/[^"'\s<>]+/g) || [])];
+              if (dataRefs.length) {
+                report.push('Referências $data/ em ' + path + ': ' + dataRefs.length);
+                dataRefs.slice(0, 30).forEach(r => issues.push('Dependência do jogo (confirmar no FS20): ' + r));
+                if (dataRefs.length > 30) issues.push('... mais ' + (dataRefs.length - 30) + ' referências $data/ em ' + path);
+              }
+            }
+          } catch (e) {
+            counts.xmlInvalid++;
+            issues.push('Erro ao ler ' + path + ': ' + (e.message || e));
+          }
+        }
+        report.push('XML/I3D analisados: ' + counts.xml + ' | Válidos: ' + counts.xmlValid + ' | Com erro: ' + counts.xmlInvalid);
+        report.push('');
+        report.push('MODDESC');
+        if (!modDescPaths.length) {
+          issues.push('Nenhum modDesc.xml encontrado.');
+        } else {
+          for (const path of modDescPaths) {
+            const raw = new TextDecoder().decode(zipFileMap.get(path));
+            const doc = new DOMParser().parseFromString(raw, 'application/xml');
+            const desc = doc.documentElement?.getAttribute('descVersion');
+            report.push(path + ' — descVersion atual: ' + (desc || 'não definido'));
+          }
+        }
+        report.push('');
+        report.push('AVISOS / ITENS A VERIFICAR');
+        report.push(...(issues.length ? issues : ['Nenhuma referência óbvia suspeita encontrada. Isso não comprova compatibilidade com o FS20.']));
+        report.push('');
+        report.push('LIMITAÇÕES IMPORTANTES');
+        report.push('- O ZIP exportado preserva os arquivos e só altera modDesc.xml se a opção estiver marcada.');
+        report.push('- Não há decodificador de I3D.SHAPES binário integrado nesta etapa.');
+        report.push('- Não é seguro reescrever automaticamente todos os parâmetros XML ou caminhos $data/.');
+        report.push('- É necessário testar o ZIP no jogo-alvo; análise XML válida não garante que o veículo funcione.');
+
+        const out = new JSZip();
+        const patch = $('patchDescVersion').checked;
+        let patched = 0;
+        for (const [path, bytes] of zipFileMap.entries()) {
+          let outputBytes = bytes;
+          if (patch && /(^|\/)moddesc\.xml$/i.test(path)) {
+            let raw = new TextDecoder().decode(bytes);
+            if (/<modDesc\b/i.test(raw)) {
+              if (/\bdescVersion\s*=\s*(["'])[^"']*\1/i.test(raw)) {
+                raw = raw.replace(/(\bdescVersion\s*=\s*)(["'])[^"']*\2/i, '$1"40"');
+              } else {
+                raw = raw.replace(/<modDesc\b/i, '<modDesc descVersion="40"');
+              }
+              outputBytes = new TextEncoder().encode(raw);
+              patched++;
+            } else {
+              issues.push('Não foi possível ajustar descVersion: raiz inesperada em ' + path);
+            }
+          }
+          out.file(path, outputBytes);
+        }
+        if (patch) report.push('', 'ALTERAÇÕES APLICADAS', 'modDesc.xml ajustados para descVersion=40: ' + patched, 'A versão 40 é uma referência de configuração do projeto e não prova compatibilidade com todas as builds do FS20.');
+        else report.push('', 'ALTERAÇÕES APLICADAS', 'Nenhum XML foi modificado; foi criada uma cópia analisada do ZIP.');
+        conversionReportText = report.join('\n');
+        lastConversionSummary = {counts, issues: issues.length, patched};
+        const blob = await out.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 4}});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const originalName = window.lastOpenedZipName || 'mod';
+        a.href = url;
+        a.download = originalName.replace(/\.zip$/i, '') + '_candidato_FS20.zip';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        $('downloadConvertReport').disabled = false;
+        $('conversionStatus').textContent = 'ZIP candidato exportado. XML analisados: ' + counts.xml + '; avisos: ' + issues.length + '; modDesc.xml alterados: ' + patched + '. Leia o relatório e teste no jogo.';
+        status('Preparação concluída. O ZIP é um candidato para teste, não uma conversão garantidamente funcional.');
+      } catch (err) {
+        console.error(err);
+        $('conversionStatus').textContent = 'Falha na análise/exportação: ' + (err?.message || err);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function downloadConversionReport() {
+      if (!conversionReportText) return;
+      const url = URL.createObjectURL(new Blob([conversionReportText], {type: 'text/plain;charset=utf-8'}));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'relatorio_FS22_para_FS20.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function exportGLB() {
+      if (!model) return;
+      status('Preparando exportação GLB...');
+      new GLTFExporter().parse(
+        model,
+        result => {
+          const blob = new Blob([result], { type: 'model/gltf-binary' });
+          const u = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = u;
+          a.download = (model.name || 'modelo').replace(/\.[^.]+$/, '') + '_exportado.glb';
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(u), 1500);
+          status('Exportação concluída com sucesso!');
+        },
+        e => status('Falha ao exportar: ' + e.message),
+        { binary: true, onlyVisible: true }
+      );
+    }
+
+    function generateReport() {
+      const r = `FS20 Mod Studio — Relatório\nModelo: ${model?.name || 'nenhum'}\nMalhas: ${stats.meshes}\nVértices: ${stats.vertices}\nMateriais: ${stats.materials}\n`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([r], { type: 'text/plain' }));
+      a.download = 'relatorio-fs20.txt';
+      a.click();
+    }
+  </script>
+</body>
+</html>
